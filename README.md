@@ -23,11 +23,73 @@ CycleGAN იყენებს cycle-consistency-ის:
 
 ლოგიკა ის დევს, რომ ამ მეთოდით მოდელი უფრო ბევრს ისწავლის როგორც სურათზე ასევე მონეზე.
 
+### პირველი ექსპერიმენტი: U-Net Generator vs ResNet Generator.
+
+1. Role of the Generator in CycleGAN
+
+In CycleGAN, the generator is responsible for:
+
+Translating an image from one domain to another
+(e.g. Photo → Monet or Monet → Photo)
+
+Preserving the content structure of the image
+
+Modifying style, texture, and color distribution
+
+Supporting cycle-consistency, i.e. enabling the inverse mapping back to the original image
+
+Because CycleGAN operates on unpaired data, the generator architecture plays a critical role in balancing:
+
+Structural preservation
+
+Style transformation
+
+Training stability
+
+2. ResNet Generator
+Architecture Overview
+
+The ResNet generator used in this project follows the architecture proposed in the original CycleGAN paper:
+
+Initial convolution with large receptive field
+
+Downsampling using strided convolutions
+
+Multiple residual blocks
+
+Upsampling back to original resolution
+
+Final Tanh output layer
+
+The core building block is the residual block:
+
+y=x+F(x)
+
+where 
+
+F(x) represents a small convolutional transformation.
+
+
+3. U-Net Generator
+Architecture Overview
+
+The U-Net generator follows an encoder–decoder structure with long skip connections between corresponding layers:
+
+Encoder progressively downsamples the image
+
+Bottleneck captures global representation
+
+Decoder upsamples back to full resolution
+
+Skip connections concatenate encoder features to decoder layers
+
+Unlike ResNet, U-Net connects early low-level features directly to late reconstruction layers.
+
+
 ## next_Monet_Lodia_exp1_v2_full.ipynb
 This code is:
 CycleGAN with ResNet generator + PatchGAN discriminator + LSGAN loss at 256×256.
 
-ესეიგი, ჩემი ექსპერიმენტი იქნება U-Net vs ResNet. გამოვიყენებ CycleGAN-ს და ვეცდები შევადარო შედეგები.
 
 # ჯერ ვისაუბროთ დატაზე და preprocessing-ზე:
 
@@ -140,13 +202,200 @@ We use 4×4 convolutions:
   ესენი ნიშნავს რომ გენერატორი იმაზე უფრო ცვლის ნახატებს ვიდრე საჭიროა.
 
 
+## next_Monet_Lodia_U_Net_exp1.ipynb
+
+# შევცვალეთ ResNet -> U-Net
+ამ ცვლილების მიუხედავად, იდენტური დარჩა:
+1. დისკრიმინატორი
+2. LSGAN, cycle-consistency, identity
+3. დატა და preprocessing
+4. 256x256
+
+მიზანია გავარკვიოთ როგორ შეიცვლება Cycle-consistency, Training stability...
+
+U-Net architectures are known to be effective when low-level spatial information must be preserved, which is particularly relevant for artistic style transfer.
+
+# U-Net Generator Architecture
+  The U-Net generator follows an encoder–decoder structure with skip connections, where feature maps from the downsampling path are concatenated with corresponding upsampling layers.
+
+1. Downsampling path:
+    Series of stride-2 convolutions
+    Gradually increases channel depth
+    Captures global context and semantics
+
+2. Upsampling path:
+     Transposed convolutions
+     Gradually restores spatial resolution
+
+3. Skip connections:
+    Direct concatenation of encoder features into decoder
+    Preserve fine spatial details (edges, textures)
+
+4. Final activation:
+     Tanh, producing outputs in [−1,1]
+
+Unlike the ResNet generator, U-Net does not rely on residual blocks for information flow; instead, it explicitly reuses early-layer features, which has a strong impact on visual sharpness.
+
+| Aspect             | ResNet Generator     | U-Net Generator             |
+| ------------------ | -------------------- | --------------------------- |
+| Core idea          | Residual learning    | Encoder–decoder + skips     |
+| Feature reuse      | Implicit (residuals) | Explicit (skip connections) |
+| Spatial detail     | Moderately preserved | Strongly preserved          |
+| Texture sharpness  | Softer               | Sharper                     |
+| Memory usage       | Lower                | Higher                      |
+| Training stability | Very stable          | Slightly more oscillatory   |
+
+# Run Results
+
+For U-Net:
+
+| Metric       | Value     |        
+| ------------ | --------- |
+| G_total    | **2.72**  |
+| G_P2M_adv  | 1.12      |
+| G_M2P_adv  | 0.67      |
+| cycle_loss | **0.75**  |
+| idt_M      | **0.07**  |
+| idt_P      | **0.11**  |
+| D_M        | 0.017     |
+| D_P       | **0.036** |
+
+For ResNet:
+
+D_M = 0.01413
+D_P = 0.25527
+G_M2P_adv = 0.53436
+G_P2M_adv = 1.17031
+G_total = 5.50306
+cycle_loss = 2.58305
+idt_M = 0.45792
+idt_P = 0.75742
+
+Cycle loss is significantly lower than in the ResNet experiment
+→ U-Net reconstructs images more faithfully.
+
+Identity losses are much smaller
+→ The generator minimally alters images already in the target domain.
+
+Discriminator losses are low but balanced
+→ No discriminator collapse observed.
+
+Overall generator loss is lower than ResNet
+→ Training objective is easier for U-Net due to skip connections.
 
 
+13.1 Photo → Monet Translation
+
+Observed characteristics:
+
+Strong Monet-style color palettes
+
+Clear brush-like textures
+
+Better preservation of edges and object boundaries
+
+Less excessive blurring compared to ResNet
+
+U-Net’s skip connections help retain local structure, which results in sharper stylization.
+
+13.2 Cycle Consistency (P → M → P, M → P → M)
+
+Cycle reconstructions show:
+
+High structural fidelity
+
+Minimal geometric distortion
+
+Very small color drift
+
+This aligns with the low cycle loss (0.75) and confirms that U-Net is particularly effective at reconstruction-based constraints.
+
+13.3 Monet → Photo Translation
+
+Generated photos are sharper than ResNet outputs
+
+Some painterly artifacts remain (expected)
+
+Slightly reduced realism compared to ResNet in certain scenes
+
+This highlights a trade-off:
+
+U-Net prioritizes structure
+
+ResNet slightly prioritizes global realism
 
 
+---------------------------------------------------------------------------------------
+16.1 Summary of Experimental Results
 
+The experiments demonstrated that both architectures successfully learned meaningful mappings between the photo and Monet domains without paired supervision.
 
+The ResNet-based CycleGAN produced visually smooth and globally consistent Monet-style images, capturing color palettes and painterly textures effectively.
 
-    
+The U-Net-based CycleGAN achieved stronger cycle consistency and identity preservation, producing sharper images with clearer structural details.
+
+Quantitatively, the U-Net model achieved:
+
+Lower cycle-consistency loss
+
+Lower identity loss
+
+Lower overall generator loss
+
+While the ResNet model showed:
+
+Slightly better global stylization
+
+More stable adversarial dynamics
+
+These results indicate that architecture choice directly affects the trade-off between stylistic abstraction and structural fidelity.
+
+16.2 What We Learned About CycleGAN
+
+Through this project, several key insights about CycleGAN were observed:
+
+Cycle-consistency is essential
+Without the cycle loss, the generators would easily collapse to arbitrary mappings. The low cycle loss values in both experiments confirm that the bidirectional constraint is doing meaningful work.
+
+Identity loss improves color stability
+Identity loss helped prevent unnecessary color shifts when an image was already in the target domain, especially noticeable in the U-Net experiment.
+
+Unpaired training is feasible but fragile
+Training without paired data works, but requires careful balancing of losses and learning rates to avoid mode collapse or texture artifacts.
+
+Discriminator loss alone is not a quality metric
+Very low discriminator loss (e.g., D_M ≈ 0.01) does not necessarily imply better images; visual inspection remains critical.
+
+16.3 Architectural Insights: ResNet vs U-Net
+
+This experiment highlighted how architectural inductive biases shape the learned mapping:
+
+ResNet generators rely on residual learning to modify features gradually, leading to smoother and more painterly outputs.
+
+U-Net generators reuse low-level features via skip connections, which preserves edges and spatial structure but can reduce stylistic abstraction.
+
+In other words:
+
+ResNet favors artistic transformation
+
+U-Net favors structural reconstruction
+
+Neither architecture is universally better; the “best” choice depends on whether the task prioritizes style realism or content fidelity.
+
+16.4 Practical Takeaways
+
+From an engineering perspective, the project provided practical lessons:
+
+Batch size = 1 is critical for CycleGAN stability.
+
+Training time scales heavily with image resolution.
+
+Checkpointing is essential due to long training times and unstable runtimes.
+
+Visual monitoring is necessary; losses alone are insufficient.
+
+16.5 Final Remarks
+
+Overall, this project demonstrates that CycleGAN is a powerful framework for unpaired image translation, capable of learning complex artistic transformations from limited supervision. The comparative study between ResNet and U-Net generators shows that model architecture plays a crucial role in balancing realism, structure, and artistic style.
 
 
