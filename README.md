@@ -398,4 +398,89 @@ Visual monitoring is necessary; losses alone are insufficient.
 
 Overall, this project demonstrates that CycleGAN is a powerful framework for unpaired image translation, capable of learning complex artistic transformations from limited supervision. The comparative study between ResNet and U-Net generators shows that model architecture plays a crucial role in balancing realism, structure, and artistic style.
 
+------------------------------------------------------------------------------------------------------------
+LSGAN vs Hinge Loss
 
+In this experiment, we compare two different adversarial loss formulations used to train Generative Adversarial Networks (GANs): Least Squares GAN (LSGAN) and Hinge Adversarial Loss.
+Both losses define how the generator and discriminator compete during training, but they differ in how strongly and in what regime gradients are applied.
+
+1. Background: Adversarial Loss in GANs
+
+A GAN consists of two networks:
+
+Generator (G): tries to generate fake images that look real
+
+Discriminator (D): tries to distinguish real images from fake ones
+
+The adversarial loss defines:
+
+What it means for the discriminator to be “correct”
+
+How the generator is rewarded or penalized based on discriminator feedback
+
+Different loss functions lead to different training dynamics, stability, and image quality.
+
+2. Least Squares GAN (LSGAN)
+Motivation
+
+The original GAN loss (binary cross-entropy) often suffers from:
+
+Vanishing gradients
+
+Unstable training
+
+Saturation when the discriminator becomes too confident
+
+LSGAN was proposed to address these issues by replacing binary classification with a least-squares regression objective.
+
+LSGAN Discriminator Loss
+
+For real images x∼Pdata:
+	​
+𝐿𝐷𝑟𝑒𝑎𝑙 =(𝐷(𝑥)−1)2 (2 means square)
+
+For fake images G(z): LDfake = (D(G(z)))square
+
+Total discriminator loss = 1/2[LDreal + LDfake]
+
+LSGAN Generator Loss
+
+The generator tries to make fake images look real:
+
+
+LG=(D(G(z))−1)square
+
+3. Hinge Adversarial Loss
+Motivation
+
+Hinge loss comes from margin-based classification, commonly used in SVMs.
+Instead of penalizing all mistakes equally, it enforces a margin:
+
+If the discriminator is already confident enough → no loss
+
+Focuses learning on hard examples
+
+This often leads to:
+
+Stronger discriminators
+
+Sharper images
+
+More stable gradients in practice
+
+Hinge Discriminator Loss
+
+For real images:
+LDreal=max(0,1−D(x))
+
+For fake images:
+LDfake=max(0,1+D(G(z)))
+
+total loss: E[LDreal + Ldfake]
+
+Hinge Generator Loss
+
+The generator simply tries to increase the discriminator score:
+
+
+LG=−E[D(G(z))]
