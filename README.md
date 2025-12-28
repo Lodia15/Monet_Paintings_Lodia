@@ -176,6 +176,9 @@ We use 4×4 convolutions:
 
 ## next_Monet_Lodia_U_Net_exp1.ipynb
 
+FID: 93.3667451163031
+MiFID: 93.3667451163031
+
 # შევცვალეთ ResNet -> U-Net
 ამ ცვლილების მიუხედავად, იდენტური დარჩა:
 1. დისკრიმინატორი
