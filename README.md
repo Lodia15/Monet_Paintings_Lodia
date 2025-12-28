@@ -1,6 +1,8 @@
 # Monet_Paintings_Lodia
 Assignment For Generative models: I’m Something of a Painter Myself
 
+WANDB: https://wandb.ai/llodi22-free-university-of-tbilisi-/Monet_Paintings_Lodia/table?nw=nwuserllodi22
+
 მოდი ჯერ ვისაუბროთ რაზეა საერთოდ ქომფეთიშენი:
 მიზანია ჩვეულებრივი ფოტოაპარატით გადაღებული სურათები, მონეს ნახატების სტილში დავაგენერიროთ.
 photo_jgp/ ფოტოები
