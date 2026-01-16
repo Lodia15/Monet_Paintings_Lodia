@@ -27,6 +27,8 @@ CycleGAN იყენებს cycle-consistency-ის:
 
 ### პირველი ექსპერიმენტი: U-Net Generator vs ResNet Generator.
 
+
+
 1. გენერატორის როლი:
 
 CycleGAN-ში გენერატორს გადაყავს სურათი ერთი დომენიდან მეორეში.
@@ -66,6 +68,8 @@ Unlike ResNet, U-Net connects early low-level features directly to late reconstr
 This code is:
 CycleGAN with ResNet generator + PatchGAN discriminator + LSGAN loss at 256×256.
 
+FID: 108.6392649002817
+MiFID: 115.9367297786193
 
 # ჯერ ვისაუბროთ დატაზე და preprocessing-ზე:
 
@@ -246,23 +250,129 @@ U-Net architectures are known to be effective when low-level spatial information
 # U-Net Generator Architecture
   The U-Net generator follows an encoder–decoder structure with skip connections, where feature maps from the downsampling path are concatenated with corresponding upsampling layers.
 
+ეს Generator არის Encoder–Decoder:
+
+ქვემოთ (encoder) სურათს “აკუმშავს” → იღებს უფრო მაღალი დონის (high-level) ფიჩერებს
+
+ზემოთ (decoder) ისევ “აშლის” → აბრუნებს 256×256 გამოსავალს
+და skip connections-ით (შუალედური “გადახტომები”) ინარჩუნებს დეტალებს.
+
+
 1. Downsampling path:
     Series of stride-2 convolutions
     Gradually increases channel depth
     Captures global context and semantics
 
-2. Upsampling path:
+	   UNetDown — “დაუნსემპლინგი” (Encoder-ის ნაწილი)
+	nn.Conv2d(in_size, out_size, 4, 2, 1)
+	
+	
+	kernel=4, stride=2, padding=1 → სიგანე/სიმაღლე ნახევრდება (H,W → H/2, W/2)
+	
+	არხები (channels) იზრდება: in_size -> out_size
+	
+	InstanceNorm2d (თუ normalize=True) → GAN-ში სტაბილურობა
+	
+	LeakyReLU → ნეგატიურებში gradient არ “კვდება”
+	
+	Dropout (თუ ჩართულია) → რეგულარიზაცია
+	
+	ლექტორს უთხარი: “UNetDown არის encoder-ის ბლოკი: ერთ ნაბიჯში აკეთებს downsample-ს და feature 		  		extraction-	ს.”
+   
+
+3. Upsampling path:
      Transposed convolutions
      Gradually restores spatial resolution
 
-3. Skip connections:
+   UNetUp — “აპსემპლინგი” + skip-თან შერწყმა (Decoder-ის ნაწილი)
+nn.ConvTranspose2d(in_size, out_size, 4, 2, 1)
+
+
+ConvTranspose2d → ზრდის რეზოლუციას ორჯერ (H,W → 2H, 2W)
+
+InstanceNorm + ReLU → სტაბილური და “სუფთა” feature-ები
+
+მერე:
+
+torch.cat((x, skip_input), 1)
+
+
+encoder-ის შესაბამისი ფიჩერები კონკატენაციით ებმება decoder-ზე არხების ღერძზე (channel dimension)
+
+ლექტორს უთხარი: “UNetUp არა მარტო upsample-ს აკეთებს, არამედ skip features-ს აერთებს, რომ დეტალები არ დაიკარგოს.”
+
+5. Skip connections:
     Direct concatenation of encoder features into decoder
     Preserve fine spatial details (edges, textures)
 
-4. Final activation:
+   UNetSkipConnectionBlock — U-Net-ის მთავარი “მატრიოშკა”
+
+ეს კლასი აგებს U-Net-ს რეკურსიულად/ჩაშენებულად.
+
+ბლოკის შიდა ლოგიკა
+
+Down ნაწილი: LeakyReLU -> Conv(stride=2) -> Norm
+
+Submodule: შიგნით ჩაშენებული შემდეგი ბლოკი (უფრო ღრმა დონე)
+
+Up ნაწილი: ReLU -> ConvTranspose(stride=2) -> Norm
+
+3 შემთხვევა:
+
+outermost=True
+
+იღებს input-ს, აკეთებს down → submodule → up
+
+ბოლოს Tanh() → output [-1,1] დიაპაზონში (შენ Normalize-ს ერგება)
+
+innermost=True
+
+ეს არის “ბოთლნეკი” — ყველაზე პატარა რეზოლუცია, ყველაზე ღრმა ფიჩერები.
+
+შუალედური ბლოკები
+
+ბოლოს აკეთებს:
+
+return torch.cat([x, self.model(x)], 1)
+
+
+ანუ input x-ს skip connection-ად ამატებს decoder-ის output-ს.
+
+ლექტორს უთხარი: “UNetSkipConnectionBlock არის ერთი U-Net საფეხური: downsample → deeper block → upsample და ბოლოს skip-ით concat.”
+
+7. Final activation:
      Tanh, producing outputs in [−1,1]
 
-Unlike the ResNet generator, U-Net does not rely on residual blocks for information flow; instead, it explicitly reuses early-layer features, which has a strong impact on visual sharpness.
+UNetGenerator — როგორ აწყობს მთლიან ქსელს
+
+აქ შენ ქმნი ყველაზე ღრმა ბლოკს:
+
+unet_block = UNetSkipConnectionBlock(ngf*8, ngf*8, innermost=True)
+
+
+მერე ამაზე ზედ “აშენებ” ბლოკებს:
+
+რამდენიმე ngf*8 შუალედური (num_downs-ით განსაზღვრული)
+
+შემდეგ თანდათან ამცირებ არხებს:
+
+ngf*4 -> ngf*8
+
+ngf*2 -> ngf*4
+
+ngf -> ngf*2
+და ბოლოს outermost ბლოკი აკეთებს output-ს:
+
+UNetSkipConnectionBlock(output_nc, ngf, outermost=True)
+
+
+ამ კოდში მთავარი იდეა: U-Net-ის სიღრმე/რამდენჯერ downsample ხდება კონტროლდება num_downs-ით.
+
+ერთი ხაზით შედარება ResNet-თან (თუ გკითხავენ)
+
+ResNet generator: “ბირთვულად” ინახავს ინფორმაციას residual ბლოკებით (x + F(x))
+
+U-Net generator: დეტალებს ინახავს skip connections-ით (encoder-ის early features პირდაპირ მიჰყავს decoder-ში)
 
 | Aspect             | ResNet Generator     | U-Net Generator             |
 | ------------------ | -------------------- | --------------------------- |
@@ -319,3 +429,74 @@ Hinge Loss Result
 FID: 89.65889200145094
 MiFID: 103.301895
 
+
+1) d_hinge_loss(real_logits, fake_logits)
+
+ეს არის Discriminator-ის loss.
+
+Discriminator-ს 2 დავალება აქვს:
+
+✅ რეალურ სურათებზე
+
+უნდა თქვას: “real არის real” → ანუ logits იყოს მაღალი (+)
+
+ამიტომ loss_real არის:
+
+loss_real = mean(relu(1 - real_logits))
+
+
+➡️ თუ real_logits >= 1 → 1 - real_logits <= 0 → relu = 0
+✅ ანუ Discriminator უკვე კარგად აკეთებს და loss აღარ ემატება
+
+➡️ თუ real_logits < 1 → loss > 0
+❌ ანუ D-ს არ ჰყოფნის confidence real-ზე და დაისჯება.
+
+✅ fake სურათებზე
+
+უნდა თქვას: “fake არის fake” → ანუ logits იყოს დაბალი (-)
+
+ამიტომ loss_fake არის:
+
+loss_fake = mean(relu(1 + fake_logits))
+
+
+➡️ თუ fake_logits <= -1 → 1 + fake_logits <= 0 → relu = 0
+✅ loss არ ემატება, fake კარგად ამოიცნო
+
+➡️ თუ fake_logits > -1 → loss > 0
+❌ ანუ Discriminator ვერ “ჩაგდო” fake საკმარისად დაბლა
+
+საბოლოოდ:
+return loss_real + loss_fake
+
+
+ანუ Discriminator-ს ვაიძულებთ:
+
+real_logits იყოს ≥ 1
+
+fake_logits იყოს ≤ -1
+
+ეს “1” და “-1” არის ე.წ. margin.
+
+2) g_hinge_loss(fake_logits)
+
+ეს არის Generator-ის loss.
+
+Generator-ს უნდა რომ Discriminator მოტყუვდეს და fake სურათებზე თქვას “real”.
+
+ანუ უნდა რომ fake_logits გახდეს რაც შეიძლება დიდი.
+
+ხოდა loss არის:
+
+return -mean(fake_logits)
+
+
+➡️ Generator როცა ზრდის fake_logits-ს → mean(fake_logits) იზრდება
+➡️ -mean(fake_logits) მცირდება
+✅ ანუ loss მინიმუმისკენ მიდის
+
+მოკლე დასკვნა (ლექტორთან რომ თქვა)
+
+Discriminator: ცდილობს real → +1 ზე მაღლა, fake → -1 ზე დაბლა
+
+Generator: ცდილობს fake logits რაც შეიძლება მაღალი გახადოს (რომ D მოატყუოს)
