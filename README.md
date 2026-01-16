@@ -80,6 +80,8 @@ batch_sizeს ვიყენებ ერთს რადგან ოფიც
 დავწერე: ResNetGenerator(nn.Module), PatchDiscriminator(nn.Module), training loop (manual), loss formulas (explicit).
 
 # ResNet-based Generator:
+“Generator იღებს ფოტოს, ჯერ compress-ით იღებს გლობალურ ფიჩერებს, შემდეგ 9 residual block-ით ატარებს სტილურ ცვლილებას, მერე decompress-ით აბრუნებს 256×256-ზე და აძლევს RGB გამოსახულებას.”
+
 ngf = 32 (lighter/faster than the common 64)
 n_blocks = 9 (recommended for 256×256 in CycleGAN)
 n_downsampling = 2
@@ -88,33 +90,74 @@ n_downsampling = 2
 1. Initial conv (7×7)
   Reflection padding to avoid edge artifacts
   Conv → InstanceNorm → ReLU
+	სურათის „საწყისი ფიჩერების“ ამოღება.
 
 2.Downsampling ×2
   Each downsampling halves resolution and increases channels:
   256×256 → 128×128 → 64×64
   channels: 32 → 64 → 128
+  ლექტორს ეუბნები: “ვაპატარავებთ რეზოლუციას რომ network-მა უფრო გლობალური სტრუქტურა დაინახოს და იაფი გახდეს გამოთვლა.
   
 3.Residual blocks (9 blocks) at 64×64
-  Each block:
-    does Conv → INorm → ReLU → Conv → INorm
-    then adds skip connection: x + block(x)
-    These blocks keep spatial size but learn style/content transformations.
+	იდეა: ბლოკი სწავლობს „პატარა კორექციას“ სურათზე და მერე ამ კორექციას ამატებს ორიგინალს.
+	
+ReflectionPad2d(1) — სურათის კიდეებს „სარკისებურად“ აფართოებს 1 პიქსელით, რომ კონვოლუციისას კიდეებზე არტეფაქტები ნაკლები იყოს.
+	
+Conv2d(dim, dim, 3x3) — 3x3 კონვოლუცია, არხების რაოდენობა არ იცვლება (dim → dim).
+	
+InstanceNorm2d(dim) — ნორმალიზაცია თითო სურათზე/არხზე (CycleGAN-ში სტანდარტია, batch size=1-ზე კარგად მუშაობს).
+	
+ReLU — არახაზოვანი აქტივაცია.
+	
+მერე ისევ იგივე: pad → conv → instance norm.
+
+9 ბლოკი ნიშნავს: სტანდარტი 256×256 CycleGAN-ზე.
+
+ეს ნაწილი არ ცვლის ზომას, უბრალოდ ფიჩერებს “სტილზე” გადააწყობს.
+
+აქ ხდება რეალური ‘photo→Monet’ სტილის შეცვლა, რადგან ამ ბლოკებში network სწავლობს რა features უნდა დაამატოს/შეცვალოს.”
 
 4.Upsampling ×2 (ConvTranspose)
     64×64 → 128×128 → 256×256
     channels go back down: 128 → 64 → 32
 
+ვაბრუნებთ original resolution-ს, რომ საბოლოოდ ისევ 256×256 სურათი მივიღოთ.”
+
 5.Output conv (7×7) + Tanh
     output has 3 channels (RGB)
     output range is [-1, 1]
+	
+ისევ 7x7 — ბოლო smooth mapping RGB-ზე.
+Tanh() — output-ს მიჰყავს [-1, 1]-ში, რაც ემთხვევა შენს normalize-ს:
+ეს აუცილებელია რადგან GAN training-ში ხშირად output normalized range-ში გვინდა
 
 # Discriminator: PatchGAN(70x70)
+“ეს დისკრიმინატორი PatchGAN-ია: downsample-ებით იღებს feature maps-ს, ზრდის არხებს, და ბოლოს აბრუნებს patch-wise რეალურობის map-ს, რომ გენერატორს აიძულოს Monet-ის მსგავსი ტექსტურების სწავლა.”
+
 ეს დისკრიმინატორი არ გვიბრუნებს პასუხად უბრალოდ real/fake-ს. გვიბრუნებს score-ების გრიდს. სხვანაირად რომ ავხსნა ის არ მპასუხობს ეს არის თუ არა მონეს ნახატი, ის მეუბნება კონკრეტული ნაწილები სურათების არის თუ არა მონეს სტილის.
 არქიტექტურა: 
 We use 4×4 convolutions:
-    First layer: Conv(3→32), stride 2, LeakyReLU
-    Next layers: Conv with InstanceNorm + LeakyReLU
-    Final layer outputs 1-channel map of realism scores
+    1)First layer: Conv(3→32), stride 2, LeakyReLU
+		4x4 კონვოლუცია stride=2 → ზომას ამცირებს 2-ჯერ (downsample).
+
+ndf=32 არის საწყისი ფიჩერების რაოდენობა (64 სტანდარტია, 32 = უფრო სწრაფი).
+
+LeakyReLU იყენებს GAN-ებში სტაბილურობისთვის (ReLU-ზე უკეთ მუშაობს discriminator-ში).
+	
+2)Next layers: Conv with InstanceNorm + LeakyReLU
+	ყოველ ეტაპზე:
+
+არხები იზრდება: 32 → 64 → 128 (nf_mult = 2^n, max 8-მდე)
+
+stride=2 კიდევ ამცირებს ზომას
+
+InstanceNorm2d იყენებ იმიტომ, რომ batch size=1 გაქვს და ეს კარგად მუშაობს CycleGAN-ში.	
+  
+3)Final layer outputs 1-channel map of realism scores
+stride=1 → უკვე აღარ აკლებს ზომას ბევრად, უბრალოდ უფრო “ზუსტად” აფასებს ადგილობრივ ტექსტურებს.
+
+ბოლო conv აბრუნებს 1 არხს → ეს არის patch-wise score map.
+	
 
 გვიბრუნებს ეგრედ წოდებულ patch map-ს. მაღალი შედეგია სადაც გავს, დაბალია სადაც არ გავს.
 
@@ -123,14 +166,22 @@ We use 4×4 convolutions:
 ვიყენებ სამნაირ loss-ს.
 1. Adversarial loss(LSGAN)
    criterion_GAN = nn.MSELoss()
+   
+   def mse_loss(pred, target):
+    return torch.mean((pred - target) ** 2)
 
-2. Cycle-consistency loss
+
+3. Cycle-consistency loss
    "აკონტროლებს გადასვლებს":
      P → M → P should reconstruct original P
      M → P → M should reconstruct original M
      criterion_cycle = nn.L1Loss()
 
-3. Identity loss
+   def l1_loss(pred, target):
+    return torch.mean(torch.abs(pred - target))
+
+
+5. Identity loss
    ვცდილობთ არ დავუშვათ არასიჭირო ფერების ცვლა. 
    ჩვენ რომ მონეს სურათი გავუშვათ მონე->სურათი გენერატორში, ზუსტად იგივე უნდა დაგვიბრუნოს
      G_P2M(M) ≈ M, G_M2P(P) ≈ P
@@ -260,218 +311,11 @@ Discriminator losses are low but balanced
 Overall generator loss is lower than ResNet
 → Training objective is easier for U-Net due to skip connections.
 
-
-13.1 Photo → Monet Translation
-
-Observed characteristics:
-
-Strong Monet-style color palettes
-
-Clear brush-like textures
-
-Better preservation of edges and object boundaries
-
-Less excessive blurring compared to ResNet
-
-U-Net’s skip connections help retain local structure, which results in sharper stylization.
-
-13.2 Cycle Consistency (P → M → P, M → P → M)
-
-Cycle reconstructions show:
-
-High structural fidelity
-
-Minimal geometric distortion
-
-Very small color drift
-
-This aligns with the low cycle loss (0.75) and confirms that U-Net is particularly effective at reconstruction-based constraints.
-
-13.3 Monet → Photo Translation
-
-Generated photos are sharper than ResNet outputs
-
-Some painterly artifacts remain (expected)
-
-Slightly reduced realism compared to ResNet in certain scenes
-
-This highlights a trade-off:
-
-U-Net prioritizes structure
-
-ResNet slightly prioritizes global realism
-
-
----------------------------------------------------------------------------------------
-16.1 Summary of Experimental Results
-
-The experiments demonstrated that both architectures successfully learned meaningful mappings between the photo and Monet domains without paired supervision.
-
-The ResNet-based CycleGAN produced visually smooth and globally consistent Monet-style images, capturing color palettes and painterly textures effectively.
-
-The U-Net-based CycleGAN achieved stronger cycle consistency and identity preservation, producing sharper images with clearer structural details.
-
-Quantitatively, the U-Net model achieved:
-
-Lower cycle-consistency loss
-
-Lower identity loss
-
-Lower overall generator loss
-
-While the ResNet model showed:
-
-Slightly better global stylization
-
-More stable adversarial dynamics
-
-These results indicate that architecture choice directly affects the trade-off between stylistic abstraction and structural fidelity.
-
-16.2 What We Learned About CycleGAN
-
-Through this project, several key insights about CycleGAN were observed:
-
-Cycle-consistency is essential
-Without the cycle loss, the generators would easily collapse to arbitrary mappings. The low cycle loss values in both experiments confirm that the bidirectional constraint is doing meaningful work.
-
-Identity loss improves color stability
-Identity loss helped prevent unnecessary color shifts when an image was already in the target domain, especially noticeable in the U-Net experiment.
-
-Unpaired training is feasible but fragile
-Training without paired data works, but requires careful balancing of losses and learning rates to avoid mode collapse or texture artifacts.
-
-Discriminator loss alone is not a quality metric
-Very low discriminator loss (e.g., D_M ≈ 0.01) does not necessarily imply better images; visual inspection remains critical.
-
-16.3 Architectural Insights: ResNet vs U-Net
-
-This experiment highlighted how architectural inductive biases shape the learned mapping:
-
-ResNet generators rely on residual learning to modify features gradually, leading to smoother and more painterly outputs.
-
-U-Net generators reuse low-level features via skip connections, which preserves edges and spatial structure but can reduce stylistic abstraction.
-
-In other words:
-
-ResNet favors artistic transformation
-
-U-Net favors structural reconstruction
-
-Neither architecture is universally better; the “best” choice depends on whether the task prioritizes style realism or content fidelity.
-
-16.4 Practical Takeaways
-
-From an engineering perspective, the project provided practical lessons:
-
-Batch size = 1 is critical for CycleGAN stability.
-
-Training time scales heavily with image resolution.
-
-Checkpointing is essential due to long training times and unstable runtimes.
-
-Visual monitoring is necessary; losses alone are insufficient.
-
-16.5 Final Remarks
-
-Overall, this project demonstrates that CycleGAN is a powerful framework for unpaired image translation, capable of learning complex artistic transformations from limited supervision. The comparative study between ResNet and U-Net generators shows that model architecture plays a crucial role in balancing realism, structure, and artistic style.
-
 ------------------------------------------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
 
 LSGAN vs Hinge Loss
 
+Hinge Loss Result
 FID: 89.65889200145094
 MiFID: 103.301895
 
-In this experiment, we compare two different adversarial loss formulations used to train Generative Adversarial Networks (GANs): Least Squares GAN (LSGAN) and Hinge Adversarial Loss.
-Both losses define how the generator and discriminator compete during training, but they differ in how strongly and in what regime gradients are applied.
-
-1. Background: Adversarial Loss in GANs
-
-A GAN consists of two networks:
-
-Generator (G): tries to generate fake images that look real
-
-Discriminator (D): tries to distinguish real images from fake ones
-
-The adversarial loss defines:
-
-What it means for the discriminator to be “correct”
-
-How the generator is rewarded or penalized based on discriminator feedback
-
-Different loss functions lead to different training dynamics, stability, and image quality.
-
-2. Least Squares GAN (LSGAN)
-Motivation
-
-The original GAN loss (binary cross-entropy) often suffers from:
-
-Vanishing gradients
-
-Unstable training
-
-Saturation when the discriminator becomes too confident
-
-LSGAN was proposed to address these issues by replacing binary classification with a least-squares regression objective.
-
-LSGAN Discriminator Loss
-
-For real images x∼Pdata:
-	​
-𝐿𝐷𝑟𝑒𝑎𝑙 =(𝐷(𝑥)−1)2 (2 means square)
-
-For fake images G(z): LDfake = (D(G(z)))square
-
-Total discriminator loss = 1/2[LDreal + LDfake]
-
-LSGAN Generator Loss
-
-The generator tries to make fake images look real:
-
-
-LG=(D(G(z))−1)square
-
-3. Hinge Adversarial Loss
-Motivation
-
-Hinge loss comes from margin-based classification, commonly used in SVMs.
-Instead of penalizing all mistakes equally, it enforces a margin:
-
-If the discriminator is already confident enough → no loss
-
-Focuses learning on hard examples
-
-This often leads to:
-
-Stronger discriminators
-
-Sharper images
-
-More stable gradients in practice
-
-Hinge Discriminator Loss
-
-For real images:
-LDreal=max(0,1−D(x))
-
-For fake images:
-LDfake=max(0,1+D(G(z)))
-
-total loss: E[LDreal + Ldfake]
-
-Hinge Generator Loss
-
-The generator simply tries to increase the discriminator score:
-
-
-LG=−E[D(G(z))]
