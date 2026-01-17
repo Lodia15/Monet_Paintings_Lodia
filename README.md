@@ -28,42 +28,6 @@ CycleGAN იყენებს cycle-consistency-ის:
 ### პირველი ექსპერიმენტი: U-Net Generator vs ResNet Generator.
 
 
-
-1. გენერატორის როლი:
-
-CycleGAN-ში გენერატორს გადაყავს სურათი ერთი დომენიდან მეორეში.
-ინახავს სურათის სტრუქტურას და შინაარსს.
-სტილის, ტექსტურისა და ფერის განაწილების შეცვლა.
-ციკლის თანმიმდევრულობა, ანუ ორიგინალურ გამოსახულებაზე ინვერსიული შესაბამისობის პოვნა.
-
-2. ResNet Generator
-
-აქ ვიყენებ იმ არქიტექტურას რაც CycleGan-ის დოკუმენტაციაში გვხვდება.
-Initial convolution with large receptive field
-Downsampling using strided convolutions
-Multiple residual blocks
-Upsampling back to original resolution
-Final Tanh output layer
-
-The core building block is the residual block:
-
-y=x+F(x), where F(x) represents a small convolutional transformation.
-
-
-3. U-Net Generator
-The U-Net generator follows an encoder–decoder structure with long skip connections between corresponding layers:
-
-Encoder progressively downsamples the image
-
-Bottleneck captures global representation
-
-Decoder upsamples back to full resolution
-
-Skip connections concatenate encoder features to decoder layers
-
-Unlike ResNet, U-Net connects early low-level features directly to late reconstruction layers.
-
-
 ## next_Monet_Lodia_exp1_v2_full.ipynb (ეს არის დასრულებული ფაილი, კიდევ რამდენიმე ფაილია რომლებიც ბოლომდე ვერ გავიდნენ GPU-ს გამო, მაგრამ ჩექპოინტებით ვაგრძელებდი)
 This code is:
 CycleGAN with ResNet generator + PatchGAN discriminator + LSGAN loss at 256×256.
@@ -81,7 +45,7 @@ This normalization maps pixel range [0,1] to [-1,1], which matches the generator
 batch_sizeს ვიყენებ ერთს რადგან ოფიციალურ ფეიფერში ეგრე ეწერა. ამცირებს gpuს გამოყენებას 256x256ზე.
 
 # არ გამომიყენებია არც ერთი შეზღუდული tool.
-დავწერე: ResNetGenerator(nn.Module), PatchDiscriminator(nn.Module), training loop (manual), loss formulas (explicit).
+დავწერე: ResNetGenerator(nn.Module), PatchDiscriminator(nn.Module), training loop (manual).
 
 # ResNet-based Generator:
 “Generator იღებს ფოტოს, ჯერ compress-ით იღებს გლობალურ ფიჩერებს, შემდეგ 9 residual block-ით ატარებს სტილურ ცვლილებას, მერე decompress-ით აბრუნებს 256×256-ზე და აძლევს RGB გამოსახულებას.”
